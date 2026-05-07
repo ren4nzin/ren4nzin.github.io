@@ -315,7 +315,7 @@
       COLE A URL DO GOOGLE APPS SCRIPT AQUI
   ===================================================== */
 
-  const APPS_SCRIPT_URL = 'COLE_AQUI_SUA_URL';
+  const APPS_SCRIPT_URL =https://script.google.com/macros/s/AKfycbx5tWP1YQxo8Zu8oVeKW6gLHs29x-umrxjexQ-NUQi04fVhHYa1tZRjDUD94lBDl2-b1Q/exec;
 
   /* ===================================================== */
 
