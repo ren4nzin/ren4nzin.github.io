@@ -312,10 +312,10 @@
 <script>
 
   /* =====================================================
-      COLE A URL DO GOOGLE APPS SCRIPT AQUI
+      COLE A URL DO  APPS SCRIPT AQUI
   ===================================================== */
 
-  const APPS_SCRIPT_URL =https://script.google.com/macros/s/AKfycbx5tWP1YQxo8Zu8oVeKW6gLHs29x-umrxjexQ-NUQi04fVhHYa1tZRjDUD94lBDl2-b1Q/exec;
+  const APPS_SCRIPT_URL ='https://script..com/macros/s/AKfycbx5tWP1YQxo8Zu8oVeKW6gLHs29x-umrxjexQ-NUQi04fVhHYa1tZRjDUD94lBDl2-b1Q/exec';
 
   /* ===================================================== */
 
