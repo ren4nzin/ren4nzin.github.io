@@ -677,7 +677,7 @@
 
 <!-- FOOTER -->
 <footer>
-  Feito com 💚 por <a href="https://github.com/ren4nzin">Renan Coutinho</a> · Viana, ES · 2025
+  Feito com  por <a href="https://github.com/ren4nzin">Renan Coutinho</a> · Viana, ES · 2025
 </footer>
 
 <script>
