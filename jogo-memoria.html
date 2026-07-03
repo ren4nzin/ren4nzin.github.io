@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Jardim da Contagem — Jogo da Memória</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800&display=swap');
+  * { box-sizing: border-box; }
+  html, body, #root { margin: 0; padding: 0; height: 100%; }
+  .display-font { font-family: 'Baloo 2', sans-serif; }
+  .flip-card { perspective: 1000px; }
+  .flip-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform 0.45s cubic-bezier(.2,.8,.2,1);
+    transform-style: preserve-3d;
+  }
+  .flipped .flip-inner { transform: rotateY(180deg); }
+  .flip-face {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .flip-back { transform: rotateY(180deg); }
+  .bloom { animation: bloom 0.5s ease; }
+  @keyframes bloom {
+    0% { transform: scale(0.5); opacity: 0; }
+    60% { transform: scale(1.15); opacity: 1; }
+    100% { transform: scale(1); }
+  }
+  input:focus, button:focus { outline: 3px solid #5AAFCB; outline-offset: 2px; }
+  .wobble:hover { transform: translateY(-3px) scale(1.02); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+// ---------- Theme: "Jardim da Contagem" (Counting Garden) ----------
+const INK = "#2F2A44";
+const CREAM = "#FFF9EE";
+const CORAL = "#FF7A5C";
+const LEAF = "#4CAF7D";
+const SUN = "#FFC145";
+const SKY = "#5AAFCB";
+const CARD_BACK = "#FFFFFF";
+
+const CRITTERS = [
+  { n: 1, icon: "🐌", name: "caracol" },
+  { n: 2, icon: "🐞", name: "joaninha" },
+  { n: 3, icon: "🕷️", name: "aranha" },
+  { n: 4, icon: "🦋", name: "borboleta" },
+  { n: 5, icon: "🐝", name: "abelha" },
+  { n: 6, icon: "🐸", name: "sapo" },
+];
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function buildDeck() {
+  const cards = [];
+  CRITTERS.forEach((c) => {
+    cards.push({ id: `num-${c.n}`, pairId: c.n, kind: "number", n: c.n });
+    cards.push({ id: `img-${c.n}`, pairId: c.n, kind: "image", n: c.n, icon: c.icon });
+  });
+  return shuffle(cards).map((c, i) => ({ ...c, key: i, matched: false }));
+}
+
+function makeMathQuestion() {
+  const isAdd = Math.random() > 0.5;
+  let a, b, answer, text;
+  if (isAdd) {
+    a = 1 + Math.floor(Math.random() * 5);
+    b = 1 + Math.floor(Math.random() * 5);
+    answer = a + b;
+    text = `${a} + ${b} = ?`;
+  } else {
+    a = 3 + Math.floor(Math.random() * 6);
+    b = 1 + Math.floor(Math.random() * (a - 1));
+    answer = a - b;
+    text = `${a} - ${b} = ?`;
+  }
+  const options = new Set([answer]);
+  while (options.size < 3) {
+    const delta = Math.floor(Math.random() * 5) - 2;
+    const candidate = answer + delta;
+    if (candidate >= 0 && candidate !== answer) options.add(candidate);
+  }
+  return { text, answer, options: shuffle([...options]) };
+}
+
+function todayISO() {
+  const d = new Date();
+  const off = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - off * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60).toString().padStart(2, "0");
+  const s = Math.floor(sec % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function App() {
+  const [screen, setScreen] = useState("form");
+  const [nome, setNome] = useState("");
+  const [idade, setIdade] = useState("");
+  const [data, setData] = useState(todayISO());
+  const [touched, setTouched] = useState(false);
+
+  const [deck, setDeck] = useState([]);
+  const [flipped, setFlipped] = useState([]);
+  const [matchedIds, setMatchedIds] = useState([]);
+  const [moves, setMoves] = useState(0);
+  const [lock, setLock] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const timerRef = useRef(null);
+
+  const [mathAsked, setMathAsked] = useState(false);
+  const [mathQuestion, setMathQuestion] = useState(null);
+  const [mathResult, setMathResult] = useState(null);
+  const [showMath, setShowMath] = useState(false);
+
+  useEffect(() => {
+    if (screen === "game") {
+      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+      return () => clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [screen]);
+
+  const startGame = () => {
+    setTouched(true);
+    const idadeNum = parseInt(idade, 10);
+    if (!nome.trim() || !idadeNum || idadeNum <= 0 || !data) return;
+    setDeck(buildDeck());
+    setFlipped([]);
+    setMatchedIds([]);
+    setMoves(0);
+    setSeconds(0);
+    setMathAsked(false);
+    setMathQuestion(null);
+    setMathResult(null);
+    setShowMath(false);
+    setScreen("game");
+  };
+
+  const idadeNum = parseInt(idade, 10);
+  const pairsMatched = matchedIds.length / 2;
+  const totalPairs = CRITTERS.length;
+
+  useEffect(() => {
+    if (screen === "game" && !mathAsked && pairsMatched >= 3 && idadeNum >= 7) {
+      setMathQuestion(makeMathQuestion());
+      setShowMath(true);
+      setMathAsked(true);
+      setLock(true);
+    }
+  }, [pairsMatched, mathAsked, idadeNum, screen]);
+
+  useEffect(() => {
+    if (screen === "game" && pairsMatched === totalPairs && deck.length > 0) {
+      clearInterval(timerRef.current);
+      const t = setTimeout(() => setScreen("results"), 900);
+      return () => clearTimeout(t);
+    }
+  }, [pairsMatched, totalPairs, deck, screen]);
+
+  const handleFlip = (card) => {
+    if (lock || showMath) return;
+    if (flipped.includes(card.key)) return;
+    if (matchedIds.includes(card.key)) return;
+    if (flipped.length === 2) return;
+
+    const next = [...flipped, card.key];
+    setFlipped(next);
+
+    if (next.length === 2) {
+      setLock(true);
+      setMoves((m) => m + 1);
+      const [aKey, bKey] = next;
+      const a = deck.find((c) => c.key === aKey);
+      const b = deck.find((c) => c.key === bKey);
+      if (a.pairId === b.pairId) {
+        setTimeout(() => {
+          setMatchedIds((prev) => [...prev, aKey, bKey]);
+          setFlipped([]);
+          setLock(false);
+        }, 500);
+      } else {
+        setTimeout(() => {
+          setFlipped([]);
+          setLock(false);
+        }, 900);
+      }
+    }
+  };
+
+  const answerMath = (opt) => {
+    setMathResult(opt === mathQuestion.answer);
+    setTimeout(() => {
+      setShowMath(false);
+      setLock(false);
+    }, 1400);
+  };
+
+  const playAgain = () => setScreen("form");
+
+  return (
+    <div style={{
+      fontFamily: "'Nunito', sans-serif",
+      minHeight: "100vh",
+      background: `radial-gradient(circle at 20% 10%, #FFF3D9 0%, ${CREAM} 45%, #EAF6EE 100%)`,
+      color: INK,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "24px",
+    }}>
+      {screen === "form" && (
+        <div style={{
+          background: CARD_BACK, borderRadius: 28, padding: "40px 36px",
+          maxWidth: 440, width: "100%", boxShadow: "0 20px 50px rgba(47,42,68,0.15)",
+          border: `3px solid ${SUN}`,
+        }}>
+          <div style={{ textAlign: "center", fontSize: 48, marginBottom: 4 }}>🐞🌼🕷️</div>
+          <h1 className="display-font" style={{ textAlign: "center", fontSize: 30, fontWeight: 700, color: CORAL, margin: "0 0 6px" }}>
+            Jardim da Contagem
+          </h1>
+          <p style={{ textAlign: "center", color: "#6B6480", margin: "0 0 28px", fontSize: 15 }}>
+            Um jogo da memória para contar e se divertir!
+          </p>
+
+          <label style={labelStyle}>Nome</label>
+          <input style={inputStyle(touched && !nome.trim())} value={nome}
+            onChange={(e) => setNome(e.target.value)} placeholder="Como você se chama?" />
+          {touched && !nome.trim() && <ErrMsg text="Escreva seu nome para continuar." />}
+
+          <label style={labelStyle}>Idade</label>
+          <input style={inputStyle(touched && (!idadeNum || idadeNum <= 0))} value={idade}
+            onChange={(e) => setIdade(e.target.value.replace(/[^0-9]/g, ""))}
+            placeholder="Quantos anos você tem?" inputMode="numeric" />
+          {touched && (!idadeNum || idadeNum <= 0) && <ErrMsg text="Digite sua idade." />}
+
+          <label style={labelStyle}>Data</label>
+          <input type="date" style={inputStyle(touched && !data)} value={data}
+            onChange={(e) => setData(e.target.value)} />
+          {touched && !data && <ErrMsg text="Escolha a data de hoje." />}
+
+          <button onClick={startGame} className="wobble" style={{
+            marginTop: 24, width: "100%", padding: "16px", borderRadius: 16, border: "none",
+            background: CORAL, color: "#fff", fontFamily: "'Baloo 2', sans-serif", fontSize: 20,
+            fontWeight: 700, cursor: "pointer", boxShadow: "0 8px 0 #D9573F", transition: "transform 0.15s ease",
+          }}>
+            Começar a jogar 🌻
+          </button>
+        </div>
+      )}
+
+      {screen === "game" && (
+        <div style={{ width: "100%", maxWidth: 640 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+            <div>
+              <div className="display-font" style={{ fontSize: 22, fontWeight: 700, color: INK }}>
+                Oi, {nome.split(" ")[0]}! 🌿
+              </div>
+              <div style={{ fontSize: 13, color: "#8A83A0" }}>Encontre os pares de números e bichinhos</div>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Pill label="Tempo" value={formatTime(seconds)} color={SKY} />
+              <Pill label="Jogadas" value={moves} color={SUN} />
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "#fff", borderRadius: 14, padding: "10px 14px", border: `2px solid #EFE7D6` }}>
+            {CRITTERS.map((c, i) => (
+              <div key={c.n} className={i < pairsMatched ? "bloom" : ""} style={{ flex: 1, textAlign: "center", fontSize: 22, opacity: i < pairsMatched ? 1 : 0.25 }}>
+                {i < pairsMatched ? "🌸" : "⚪"}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+            {deck.map((card) => {
+              const isFlipped = flipped.includes(card.key) || matchedIds.includes(card.key);
+              const isMatched = matchedIds.includes(card.key);
+              return (
+                <div key={card.key} className={`flip-card ${isFlipped ? "flipped" : ""}`}
+                  style={{ aspectRatio: "1 / 1", cursor: isMatched ? "default" : "pointer" }}
+                  onClick={() => handleFlip(card)}>
+                  <div className="flip-inner">
+                    <div className="flip-face" style={{ background: `linear-gradient(135deg, ${LEAF}, #3E9468)`, fontSize: 26 }}>🍃</div>
+                    <div className="flip-face flip-back" style={{ background: isMatched ? "#EAF9EE" : "#fff", border: `2px solid ${isMatched ? LEAF : "#EEE6D6"}`, flexDirection: "column" }}>
+                      {card.kind === "number" ? (
+                        <span className="display-font" style={{ fontSize: 34, fontWeight: 800, color: CORAL }}>{card.n}</span>
+                      ) : (
+                        <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(card.n, 3)}, 1fr)`, gap: 2, padding: 6 }}>
+                          {Array.from({ length: card.n }).map((_, i) => (
+                            <span key={i} style={{ fontSize: card.n > 4 ? 13 : 16 }}>
+                              {CRITTERS.find((c) => c.n === card.n).icon}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {showMath && mathQuestion && (
+            <MathModal question={mathQuestion} result={mathResult} onAnswer={answerMath} />
+          )}
+        </div>
+      )}
+
+      {screen === "results" && (
+        <div style={{
+          background: CARD_BACK, borderRadius: 28, padding: "40px 36px", maxWidth: 440, width: "100%",
+          textAlign: "center", boxShadow: "0 20px 50px rgba(47,42,68,0.15)", border: `3px solid ${LEAF}`,
+        }}>
+          <div style={{ fontSize: 54, marginBottom: 8 }}>🏆🌼</div>
+          <h1 className="display-font" style={{ fontSize: 28, color: LEAF, margin: "0 0 4px" }}>
+            Muito bem, {nome.split(" ")[0]}!
+          </h1>
+          <p style={{ color: "#8A83A0", margin: "0 0 24px" }}>Você completou o Jardim da Contagem</p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
+            <Stat label="Idade" value={idade} />
+            <Stat label="Data" value={data.split("-").reverse().join("/")} />
+            <Stat label="Pares certos" value={`${totalPairs}/${totalPairs}`} />
+            <Stat label="Jogadas" value={moves} />
+            <Stat label="Tempo" value={formatTime(seconds)} />
+            {mathAsked && <Stat label="Conta" value={mathResult ? "Acertou! 🎉" : "Quase lá!"} />}
+          </div>
+
+          <button onClick={playAgain} className="wobble" style={{
+            width: "100%", padding: "16px", borderRadius: 16, border: "none", background: CORAL,
+            color: "#fff", fontFamily: "'Baloo 2', sans-serif", fontSize: 18, fontWeight: 700,
+            cursor: "pointer", boxShadow: "0 8px 0 #D9573F",
+          }}>
+            Jogar de novo 🔁
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MathModal({ question, result, onAnswer }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(47,42,68,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 50 }}>
+      <div className="bloom" style={{ background: "#fff", borderRadius: 24, padding: "32px 28px", maxWidth: 360, width: "100%", textAlign: "center", border: `3px solid ${SUN}` }}>
+        <div style={{ fontSize: 34, marginBottom: 4 }}>🧮</div>
+        <div className="display-font" style={{ fontSize: 18, color: INK, marginBottom: 6, fontWeight: 700 }}>
+          Você acertou 3 pares! Vamos praticar?
+        </div>
+        <div className="display-font" style={{ fontSize: 40, fontWeight: 800, color: CORAL, margin: "18px 0" }}>
+          {question.text}
+        </div>
+        {result === null ? (
+          <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+            {question.options.map((opt) => (
+              <button key={opt} onClick={() => onAnswer(opt)} className="wobble" style={{
+                width: 64, height: 64, borderRadius: 14, border: `2px solid ${SKY}`, background: "#F0F9FC",
+                fontSize: 22, fontWeight: 700, color: INK, cursor: "pointer",
+              }}>
+                {opt}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="display-font" style={{ fontSize: 18, fontWeight: 700, color: result ? LEAF : CORAL }}>
+            {result ? "Acertou! Muito bem! 🎉" : `Quase! A resposta era ${question.answer}.`}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Pill({ label, value, color }) {
+  return (
+    <div style={{ background: "#fff", border: `2px solid ${color}`, borderRadius: 12, padding: "6px 12px", textAlign: "center", minWidth: 68 }}>
+      <div style={{ fontSize: 10, color: "#8A83A0", fontWeight: 700 }}>{label}</div>
+      <div className="display-font" style={{ fontSize: 16, fontWeight: 700, color: INK }}>{value}</div>
+    </div>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <div style={{ background: "#F7F4EC", borderRadius: 12, padding: "10px 6px" }}>
+      <div style={{ fontSize: 11, color: "#8A83A0", fontWeight: 700 }}>{label}</div>
+      <div className="display-font" style={{ fontSize: 16, fontWeight: 700, color: INK }}>{value}</div>
+    </div>
+  );
+}
+
+function ErrMsg({ text }) {
+  return <div style={{ color: "#E0553F", fontSize: 12, marginTop: 4 }}>{text}</div>;
+}
+
+const labelStyle = { display: "block", fontSize: 13, fontWeight: 700, color: "#6B6480", marginTop: 14, marginBottom: 6 };
+
+function inputStyle(hasError) {
+  return {
+    width: "100%", padding: "12px 14px", borderRadius: 12,
+    border: `2px solid ${hasError ? "#E0553F" : "#EAE3D3"}`, fontSize: 16,
+    fontFamily: "'Nunito', sans-serif", color: "#2F2A44",
+  };
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
