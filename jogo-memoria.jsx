@@ -1,0 +1,669 @@
+import React, { useState, useEffect, useRef } from "react";
+
+// ---------- Theme: "Jardim da Contagem" ----------
+const INK = "#2F2A44";
+const CREAM = "#FFF9EE";
+const CORAL = "#FF7A5C";
+const LEAF = "#4CAF7D";
+const SUN = "#FFC145";
+const SKY = "#5AAFCB";
+const CARD_BACK = "#FFFFFF";
+
+const CRITTERS = [
+  { n: 1, icon: "🐌" },
+  { n: 2, icon: "🐞" },
+  { n: 3, icon: "🕷️" },
+  { n: 4, icon: "🦋" },
+  { n: 5, icon: "🐝" },
+  { n: 6, icon: "🐸" },
+];
+
+const ICONS_GENERIC = ["⭐", "🍎", "🔵", "🍀", "🎈", "🍊", "🟣", "🍇"];
+const pickIcon = (seed) => ICONS_GENERIC[seed % ICONS_GENERIC.length];
+
+const PHASES = [
+  {
+    id: 1,
+    title: "Fase 1 — Número e Quantidade",
+    subtitle: "Encontre o número e a quantidade de bichinhos igual a ele",
+    mode: "number-quantity",
+    partidas: [6, 6, 6, 6, 6],
+    mathQuiz: false,
+  },
+  {
+    id: 2,
+    title: "Fase 2 — Quantidade + Quantidade",
+    subtitle: "Só figuras! Junte os objetos e ache o total certo",
+    mode: "quantity-sum",
+    partidas: [2, 2, 3, 4, 4, 5],
+    mathQuiz: false,
+  },
+  {
+    id: 3,
+    title: "Fase 3 — Número + Número = Quantidade",
+    subtitle: "Resolva a conta e ache a quantidade certa de objetos",
+    mode: "number-op-quantity",
+    partidas: [2, 2, 3, 4, 5, 5, 6, 6],
+    mathQuiz: true,
+  },
+];
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function makeCards(kindA, kindB, pairId, extraA, extraB) {
+  return [
+    { kind: kindA, pairId, ...extraA },
+    { kind: kindB, pairId, ...extraB },
+  ];
+}
+
+function buildPhase1Deck() {
+  const cards = [];
+  CRITTERS.forEach((c) => {
+    cards.push(
+      ...makeCards("number", "quantity", c.n, { n: c.n }, { n: c.n, icon: c.icon })
+    );
+  });
+  return shuffle(cards).map((c, i) => ({ ...c, key: i }));
+}
+
+function decomposeSum(sum) {
+  const options = [];
+  for (let a = 1; a <= 4; a++) {
+    const b = sum - a;
+    if (b >= 1 && b <= 4) options.push([a, b]);
+  }
+  return options[Math.floor(Math.random() * options.length)];
+}
+
+function buildPhase2Deck(pairsCount, partidaSeed) {
+  const pool = shuffle([2, 3, 4, 5, 6, 7, 8]).slice(0, pairsCount);
+  const icon = pickIcon(partidaSeed);
+  const cards = [];
+  pool.forEach((sum) => {
+    const [a, b] = decomposeSum(sum);
+    cards.push(
+      ...makeCards(
+        "op-sum",
+        "quantity",
+        `s${sum}`,
+        { a, b, icon },
+        { n: sum, icon }
+      )
+    );
+  });
+  return shuffle(cards).map((c, i) => ({ ...c, key: i }));
+}
+
+function buildEquation(result) {
+  const canSubtract = 9 - result >= 1;
+  const useAdd = Math.random() > 0.5 || !canSubtract;
+  if (useAdd) {
+    const a = 1 + Math.floor(Math.random() * (result - 1 || 1));
+    const b = result - a;
+    if (b >= 1) return { a, b, op: "+" };
+  }
+  const b = 1 + Math.floor(Math.random() * Math.max(9 - result, 1));
+  const a = result + b;
+  return { a, b, op: "-" };
+}
+
+function buildPhase3Deck(pairsCount, partidaSeed) {
+  const pool = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9]).slice(0, pairsCount);
+  const icon = pickIcon(partidaSeed + 3);
+  const cards = [];
+  pool.forEach((result) => {
+    const eq = buildEquation(result);
+    cards.push(
+      ...makeCards(
+        "equation",
+        "quantity",
+        `r${result}`,
+        { a: eq.a, b: eq.b, op: eq.op },
+        { n: result, icon }
+      )
+    );
+  });
+  return shuffle(cards).map((c, i) => ({ ...c, key: i }));
+}
+
+function buildDeckFor(phase, partidaIndex) {
+  const pairsCount = phase.partidas[partidaIndex];
+  if (phase.mode === "number-quantity") return buildPhase1Deck();
+  if (phase.mode === "quantity-sum") return buildPhase2Deck(pairsCount, partidaIndex);
+  return buildPhase3Deck(pairsCount, partidaIndex);
+}
+
+function makeMathQuestion() {
+  const isAdd = Math.random() > 0.5;
+  let a, b, answer, text;
+  if (isAdd) {
+    a = 1 + Math.floor(Math.random() * 5);
+    b = 1 + Math.floor(Math.random() * 5);
+    answer = a + b;
+    text = `${a} + ${b} = ?`;
+  } else {
+    a = 3 + Math.floor(Math.random() * 6);
+    b = 1 + Math.floor(Math.random() * (a - 1));
+    answer = a - b;
+    text = `${a} - ${b} = ?`;
+  }
+  const options = new Set([answer]);
+  while (options.size < 3) {
+    const delta = Math.floor(Math.random() * 5) - 2;
+    const candidate = answer + delta;
+    if (candidate >= 0 && candidate !== answer) options.add(candidate);
+  }
+  return { text, answer, options: shuffle([...options]) };
+}
+
+function todayISO() {
+  const d = new Date();
+  const off = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - off * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60).toString().padStart(2, "0");
+  const s = Math.floor(sec % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function gridCols(totalCards) {
+  if (totalCards <= 4) return 2;
+  if (totalCards <= 6) return 3;
+  return 4;
+}
+
+export default function App() {
+  const [screen, setScreen] = useState("form");
+  // form | phaseIntro | game | partidaComplete | finalResults
+
+  const [nome, setNome] = useState("");
+  const [idade, setIdade] = useState("");
+  const [data, setData] = useState(todayISO());
+  const [touched, setTouched] = useState(false);
+
+  const [phaseIndex, setPhaseIndex] = useState(0);
+  const [partidaIndex, setPartidaIndex] = useState(0);
+
+  const [deck, setDeck] = useState([]);
+  const [flipped, setFlipped] = useState([]);
+  const [matchedIds, setMatchedIds] = useState([]);
+  const [lock, setLock] = useState(false);
+
+  const [moves, setMoves] = useState(0);
+  const [seconds, setSeconds] = useState(0);
+  const timerRef = useRef(null);
+
+  const [quizTriggered, setQuizTriggered] = useState([]);
+  const [mathQuestion, setMathQuestion] = useState(null);
+  const [mathResult, setMathResult] = useState(null);
+  const [showMath, setShowMath] = useState(false);
+  const [quizStats, setQuizStats] = useState({ asked: 0, correct: 0 });
+
+  const idadeNum = parseInt(idade, 10);
+  const phase = PHASES[phaseIndex];
+  const totalPairsInPartida = phase ? phase.partidas[partidaIndex] : 0;
+  const pairsMatched = matchedIds.length / 2;
+
+  useEffect(() => {
+    if (screen === "game") {
+      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+      return () => clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [screen]);
+
+  const startGame = () => {
+    setTouched(true);
+    if (!nome.trim() || !idadeNum || idadeNum <= 0 || !data) return;
+    setPhaseIndex(0);
+    setPartidaIndex(0);
+    setMoves(0);
+    setSeconds(0);
+    setQuizStats({ asked: 0, correct: 0 });
+    setScreen("phaseIntro");
+  };
+
+  const beginPartida = (pIndex, partIndex) => {
+    const ph = PHASES[pIndex];
+    setDeck(buildDeckFor(ph, partIndex));
+    setFlipped([]);
+    setMatchedIds([]);
+    setLock(false);
+    setQuizTriggered([]);
+    setMathQuestion(null);
+    setMathResult(null);
+    setShowMath(false);
+    setScreen("game");
+  };
+
+  // math quiz trigger, every 3 correct pairs, Phase 3 only, idade >= 7
+  useEffect(() => {
+    if (
+      screen === "game" &&
+      phase &&
+      phase.mathQuiz &&
+      idadeNum >= 7 &&
+      pairsMatched > 0 &&
+      pairsMatched % 3 === 0 &&
+      !quizTriggered.includes(pairsMatched)
+    ) {
+      setMathQuestion(makeMathQuestion());
+      setShowMath(true);
+      setLock(true);
+      setQuizTriggered((prev) => [...prev, pairsMatched]);
+    }
+  }, [pairsMatched, screen, phase, idadeNum, quizTriggered]);
+
+  // partida complete
+  useEffect(() => {
+    if (screen === "game" && deck.length > 0 && pairsMatched === totalPairsInPartida) {
+      clearInterval(timerRef.current);
+      const t = setTimeout(() => setScreen("partidaComplete"), 700);
+      return () => clearTimeout(t);
+    }
+  }, [pairsMatched, totalPairsInPartida, deck, screen]);
+
+  const handleFlip = (card) => {
+    if (lock || showMath) return;
+    if (flipped.includes(card.key)) return;
+    if (matchedIds.includes(card.key)) return;
+    if (flipped.length === 2) return;
+
+    const next = [...flipped, card.key];
+    setFlipped(next);
+
+    if (next.length === 2) {
+      setLock(true);
+      setMoves((m) => m + 1);
+      const [aKey, bKey] = next;
+      const a = deck.find((c) => c.key === aKey);
+      const b = deck.find((c) => c.key === bKey);
+      if (a.pairId === b.pairId) {
+        setTimeout(() => {
+          setMatchedIds((prev) => [...prev, aKey, bKey]);
+          setFlipped([]);
+          setLock(false);
+        }, 500);
+      } else {
+        setTimeout(() => {
+          setFlipped([]);
+          setLock(false);
+        }, 900);
+      }
+    }
+  };
+
+  const answerMath = (opt) => {
+    const correct = opt === mathQuestion.answer;
+    setMathResult(correct);
+    setQuizStats((prev) => ({ asked: prev.asked + 1, correct: prev.correct + (correct ? 1 : 0) }));
+    setTimeout(() => {
+      setShowMath(false);
+      setLock(false);
+    }, 1400);
+  };
+
+  const goNext = () => {
+    const ph = PHASES[phaseIndex];
+    if (partidaIndex + 1 < ph.partidas.length) {
+      const nextPartida = partidaIndex + 1;
+      setPartidaIndex(nextPartida);
+      beginPartida(phaseIndex, nextPartida);
+    } else if (phaseIndex + 1 < PHASES.length) {
+      setPhaseIndex(phaseIndex + 1);
+      setPartidaIndex(0);
+      setScreen("phaseIntro");
+    } else {
+      timerRef.current && clearInterval(timerRef.current);
+      setScreen("finalResults");
+    }
+  };
+
+  const playAgain = () => setScreen("form");
+
+  const isLastPartidaOfGame =
+    phaseIndex === PHASES.length - 1 && partidaIndex === phase.partidas.length - 1;
+
+  return (
+    <div
+      style={{
+        fontFamily: "'Nunito', sans-serif",
+        minHeight: "100vh",
+        background: `radial-gradient(circle at 20% 10%, #FFF3D9 0%, ${CREAM} 45%, #EAF6EE 100%)`,
+        color: INK,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+      }}
+    >
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800&display=swap');
+        * { box-sizing: border-box; }
+        .display-font { font-family: 'Baloo 2', sans-serif; }
+        .flip-card { perspective: 1000px; }
+        .flip-inner {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          transition: transform 0.45s cubic-bezier(.2,.8,.2,1);
+          transform-style: preserve-3d;
+        }
+        .flipped .flip-inner { transform: rotateY(180deg); }
+        .flip-face {
+          position: absolute;
+          inset: 0;
+          backface-visibility: hidden;
+          border-radius: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .flip-back { transform: rotateY(180deg); }
+        .bloom { animation: bloom 0.5s ease; }
+        @keyframes bloom {
+          0% { transform: scale(0.5); opacity: 0; }
+          60% { transform: scale(1.15); opacity: 1; }
+          100% { transform: scale(1); }
+        }
+        input:focus, button:focus { outline: 3px solid ${SKY}; outline-offset: 2px; }
+        .wobble:hover { transform: translateY(-3px) scale(1.02); }
+      `}</style>
+
+      {screen === "form" && (
+        <div style={panelStyle(SUN)}>
+          <div style={{ textAlign: "center", fontSize: 48, marginBottom: 4 }}>🐞🌼🕷️</div>
+          <h1 className="display-font" style={{ textAlign: "center", fontSize: 30, fontWeight: 700, color: CORAL, margin: "0 0 6px" }}>
+            Jardim da Contagem
+          </h1>
+          <p style={{ textAlign: "center", color: "#6B6480", margin: "0 0 28px", fontSize: 15 }}>
+            Um jogo da memória para contar e se divertir!
+          </p>
+
+          <label style={labelStyle}>Nome</label>
+          <input style={inputStyle(touched && !nome.trim())} value={nome}
+            onChange={(e) => setNome(e.target.value)} placeholder="Como você se chama?" />
+          {touched && !nome.trim() && <ErrMsg text="Escreva seu nome para continuar." />}
+
+          <label style={labelStyle}>Idade</label>
+          <input style={inputStyle(touched && (!idadeNum || idadeNum <= 0))} value={idade}
+            onChange={(e) => setIdade(e.target.value.replace(/[^0-9]/g, ""))}
+            placeholder="Quantos anos você tem?" inputMode="numeric" />
+          {touched && (!idadeNum || idadeNum <= 0) && <ErrMsg text="Digite sua idade." />}
+
+          <label style={labelStyle}>Data</label>
+          <input type="date" style={inputStyle(touched && !data)} value={data}
+            onChange={(e) => setData(e.target.value)} />
+          {touched && !data && <ErrMsg text="Escolha a data de hoje." />}
+
+          <button onClick={startGame} className="wobble" style={primaryButtonStyle}>
+            Começar a jogar 🌻
+          </button>
+        </div>
+      )}
+
+      {screen === "phaseIntro" && (
+        <div style={panelStyle(LEAF)}>
+          <div style={{ textAlign: "center", fontSize: 48, marginBottom: 4 }}>
+            {phaseIndex === 0 ? "🔢🌸" : phaseIndex === 1 ? "➕🍀" : "🧮⭐"}
+          </div>
+          <h1 className="display-font" style={{ textAlign: "center", fontSize: 24, fontWeight: 700, color: LEAF, margin: "0 0 8px" }}>
+            {phase.title}
+          </h1>
+          <p style={{ textAlign: "center", color: "#6B6480", margin: "0 0 28px", fontSize: 15 }}>
+            {phase.subtitle}
+          </p>
+          <button onClick={() => beginPartida(phaseIndex, 0)} className="wobble" style={primaryButtonStyle}>
+            Vamos começar 🚀
+          </button>
+        </div>
+      )}
+
+      {screen === "game" && (
+        <div style={{ width: "100%", maxWidth: 640 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 10 }}>
+            <div>
+              <div className="display-font" style={{ fontSize: 18, fontWeight: 700, color: INK }}>
+                {phase.title}
+              </div>
+              <div style={{ fontSize: 13, color: "#8A83A0" }}>
+                Partida {partidaIndex + 1} de {phase.partidas.length}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Pill label="Tempo" value={formatTime(seconds)} color={SKY} />
+              <Pill label="Jogadas" value={moves} color={SUN} />
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "#fff", borderRadius: 14, padding: "10px 14px", border: "2px solid #EFE7D6" }}>
+            {Array.from({ length: totalPairsInPartida }).map((_, i) => (
+              <div key={i} className={i < pairsMatched ? "bloom" : ""} style={{ flex: 1, textAlign: "center", fontSize: 20, opacity: i < pairsMatched ? 1 : 0.25 }}>
+                {i < pairsMatched ? "🌸" : "⚪"}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${gridCols(deck.length)}, 1fr)`, gap: 10 }}>
+            {deck.map((card) => {
+              const isFlipped = flipped.includes(card.key) || matchedIds.includes(card.key);
+              const isMatched = matchedIds.includes(card.key);
+              return (
+                <div key={card.key} className={`flip-card ${isFlipped ? "flipped" : ""}`}
+                  style={{ aspectRatio: "1 / 1", cursor: isMatched ? "default" : "pointer" }}
+                  onClick={() => handleFlip(card)}>
+                  <div className="flip-inner">
+                    <div className="flip-face" style={{ background: `linear-gradient(135deg, ${LEAF}, #3E9468)`, fontSize: 24 }}>🍃</div>
+                    <div className="flip-face flip-back" style={{ background: isMatched ? "#EAF9EE" : "#fff", border: `2px solid ${isMatched ? LEAF : "#EEE6D6"}` }}>
+                      <CardFace card={card} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {showMath && mathQuestion && (
+            <MathModal question={mathQuestion} result={mathResult} onAnswer={answerMath} />
+          )}
+        </div>
+      )}
+
+      {screen === "partidaComplete" && (
+        <div style={panelStyle(LEAF)}>
+          <div style={{ fontSize: 50, marginBottom: 6 }}>🎉</div>
+          <h1 className="display-font" style={{ textAlign: "center", fontSize: 24, color: LEAF, margin: "0 0 6px" }}>
+            Partida concluída!
+          </h1>
+          <p style={{ textAlign: "center", color: "#8A83A0", margin: "0 0 20px" }}>
+            {phase.title} — Partida {partidaIndex + 1} de {phase.partidas.length}
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 22 }}>
+            <Stat label="Pares" value={`${totalPairsInPartida}/${totalPairsInPartida}`} />
+            <Stat label="Tempo" value={formatTime(seconds)} />
+          </div>
+          <button onClick={goNext} className="wobble" style={primaryButtonStyle}>
+            {partidaIndex + 1 < phase.partidas.length
+              ? "Próxima partida ➡️"
+              : phaseIndex + 1 < PHASES.length
+              ? "Próxima fase 🚀"
+              : "Ver resultado final 🏆"}
+          </button>
+        </div>
+      )}
+
+      {screen === "finalResults" && (
+        <div style={panelStyle(LEAF)}>
+          <div style={{ fontSize: 54, marginBottom: 8 }}>🏆🌼</div>
+          <h1 className="display-font" style={{ fontSize: 28, color: LEAF, margin: "0 0 4px", textAlign: "center" }}>
+            Muito bem, {nome.split(" ")[0]}!
+          </h1>
+          <p style={{ color: "#8A83A0", margin: "0 0 24px", textAlign: "center" }}>
+            Você completou o Jardim da Contagem
+          </p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
+            <Stat label="Idade" value={idade} />
+            <Stat label="Data" value={data.split("-").reverse().join("/")} />
+            <Stat label="Jogadas totais" value={moves} />
+            <Stat label="Tempo total" value={formatTime(seconds)} />
+            {quizStats.asked > 0 && (
+              <Stat label="Contas" value={`${quizStats.correct}/${quizStats.asked} certas`} />
+            )}
+          </div>
+
+          <button onClick={playAgain} className="wobble" style={primaryButtonStyle}>
+            Jogar de novo 🔁
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CardFace({ card }) {
+  if (card.kind === "number") {
+    return (
+      <span className="display-font" style={{ fontSize: 34, fontWeight: 800, color: CORAL }}>
+        {card.n}
+      </span>
+    );
+  }
+  if (card.kind === "quantity") {
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(card.n, 3)}, 1fr)`, gap: 2, padding: 6 }}>
+        {Array.from({ length: card.n }).map((_, i) => (
+          <span key={i} style={{ fontSize: card.n > 4 ? 13 : 16 }}>{card.icon}</span>
+        ))}
+      </div>
+    );
+  }
+  if (card.kind === "op-sum") {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: 4 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 1, maxWidth: 34 }}>
+          {Array.from({ length: card.a }).map((_, i) => (
+            <span key={i} style={{ fontSize: 12 }}>{card.icon}</span>
+          ))}
+        </div>
+        <span className="display-font" style={{ fontSize: 16, fontWeight: 800, color: CORAL }}>+</span>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 1, maxWidth: 34 }}>
+          {Array.from({ length: card.b }).map((_, i) => (
+            <span key={i} style={{ fontSize: 12 }}>{card.icon}</span>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (card.kind === "equation") {
+    return (
+      <span className="display-font" style={{ fontSize: 20, fontWeight: 800, color: CORAL }}>
+        {card.a} {card.op} {card.b}
+      </span>
+    );
+  }
+  return null;
+}
+
+function MathModal({ question, result, onAnswer }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(47,42,68,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 50 }}>
+      <div className="bloom" style={{ background: "#fff", borderRadius: 24, padding: "32px 28px", maxWidth: 360, width: "100%", textAlign: "center", border: `3px solid ${SUN}` }}>
+        <div style={{ fontSize: 34, marginBottom: 4 }}>🧮</div>
+        <div className="display-font" style={{ fontSize: 18, color: INK, marginBottom: 6, fontWeight: 700 }}>
+          Você acertou 3 pares! Vamos praticar?
+        </div>
+        <div className="display-font" style={{ fontSize: 40, fontWeight: 800, color: CORAL, margin: "18px 0" }}>
+          {question.text}
+        </div>
+        {result === null ? (
+          <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+            {question.options.map((opt) => (
+              <button key={opt} onClick={() => onAnswer(opt)} className="wobble" style={{
+                width: 64, height: 64, borderRadius: 14, border: `2px solid ${SKY}`, background: "#F0F9FC",
+                fontSize: 22, fontWeight: 700, color: INK, cursor: "pointer",
+              }}>
+                {opt}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="display-font" style={{ fontSize: 18, fontWeight: 700, color: result ? LEAF : CORAL }}>
+            {result ? "Acertou! Muito bem! 🎉" : `Quase! A resposta era ${question.answer}.`}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Pill({ label, value, color }) {
+  return (
+    <div style={{ background: "#fff", border: `2px solid ${color}`, borderRadius: 12, padding: "6px 12px", textAlign: "center", minWidth: 68 }}>
+      <div style={{ fontSize: 10, color: "#8A83A0", fontWeight: 700 }}>{label}</div>
+      <div className="display-font" style={{ fontSize: 16, fontWeight: 700, color: INK }}>{value}</div>
+    </div>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <div style={{ background: "#F7F4EC", borderRadius: 12, padding: "10px 6px" }}>
+      <div style={{ fontSize: 11, color: "#8A83A0", fontWeight: 700 }}>{label}</div>
+      <div className="display-font" style={{ fontSize: 16, fontWeight: 700, color: INK }}>{value}</div>
+    </div>
+  );
+}
+
+function ErrMsg({ text }) {
+  return <div style={{ color: "#E0553F", fontSize: 12, marginTop: 4 }}>{text}</div>;
+}
+
+function panelStyle(borderColor) {
+  return {
+    background: CARD_BACK,
+    borderRadius: 28,
+    padding: "40px 36px",
+    maxWidth: 440,
+    width: "100%",
+    boxShadow: "0 20px 50px rgba(47,42,68,0.15)",
+    border: `3px solid ${borderColor}`,
+  };
+}
+
+const primaryButtonStyle = {
+  marginTop: 8,
+  width: "100%",
+  padding: "16px",
+  borderRadius: 16,
+  border: "none",
+  background: CORAL,
+  color: "#fff",
+  fontFamily: "'Baloo 2', sans-serif",
+  fontSize: 20,
+  fontWeight: 700,
+  cursor: "pointer",
+  boxShadow: "0 8px 0 #D9573F",
+  transition: "transform 0.15s ease",
+};
+
+const labelStyle = { display: "block", fontSize: 13, fontWeight: 700, color: "#6B6480", marginTop: 14, marginBottom: 6 };
+
+function inputStyle(hasError) {
+  return {
+    width: "100%", padding: "12px 14px", borderRadius: 12,
+    border: `2px solid ${hasError ? "#E0553F" : "#EAE3D3"}`, fontSize: 16,
+    fontFamily: "'Nunito', sans-serif", color: "#2F2A44",
+  };
+}
